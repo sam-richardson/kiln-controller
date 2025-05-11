@@ -6,6 +6,7 @@ import busio
 ########################################################################
 #
 #   General options
+# checking to see if this is updating properly
 ### Logging
 log_level = logging.INFO
 log_format = '%(asctime)s %(levelname)s %(name)s: %(message)s'
