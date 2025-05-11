@@ -6,24 +6,19 @@ import busio
 ########################################################################
 #
 #   General options
-
 ### Logging
 log_level = logging.INFO
 log_format = '%(asctime)s %(levelname)s %(name)s: %(message)s'
-
 ### Server
 listening_port = 8081
-
 ########################################################################
 # Cost Information
-#
 # This is used to calculate a cost estimate before a run. It's also used
 # to produce the actual cost during a run. My kiln has three
 # elements that when my switches are set to high, consume 9460 watts.
 kwh_rate        = 0.27  # cost per kilowatt hour per currency_type to calculate cost to run job
 kw_elements     = 9.460 # if the kiln elements are on, the wattage in kilowatts
 currency_type   = "$"   # Currency Symbol to show when calculating cost to run job
-
 ########################################################################
 #
 # Hardware Setup (uses BCM Pin Numbering)
