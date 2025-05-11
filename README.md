@@ -1,4 +1,4 @@
-Kiln Controller
+ Kiln Controller
 ==========
 
 Turns a Raspberry Pi into an inexpensive, web-enabled kiln controller.
@@ -66,7 +66,7 @@ Download [Raspberry PI OS](https://www.raspberrypi.org/software/). Use Rasberry 
 
     $ sudo apt-get update
     $ sudo apt-get dist-upgrade
-    $ git clone https://github.com/jbruce12000/kiln-controller
+    $ git clone https://github.com/sam-richardson/kiln-controller
     $ cd kiln-controller
     $ python3 -m venv venv
     $ source venv/bin/activate
