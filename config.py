@@ -81,9 +81,9 @@ currency_type   = "$"   # Currency Symbol to show when calculating cost to run j
 
 try:
     import board
-    spi_sclk  = board.D22  # spi clock
-    spi_miso  = board.D17  # spi Microcomputer In Serial Out
-    spi_cs    = board.D27  # spi Chip Select
+    spi_sclk  = board.D15  # spi clock
+    spi_miso  = board.D11  # spi Microcomputer In Serial Out
+    spi_cs    = board.D13  # spi Chip Select
     spi_mosi  = board.D10  # spi Microcomputer Out Serial In (not connected)
     gpio_heat = board.D23 #output that controls relay
 except (NotImplementedError,AttributeError):
