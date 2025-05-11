@@ -6,18 +6,18 @@ import csv
 import time
 import argparse
 
-
-def recordprofile(csvfile, targettemp):
-
-    try:
+try:
         sys.dont_write_bytecode = True
         import config
         sys.dont_write_bytecode = False
 
-    except ImportError:
+except ImportError:
         print("Could not import config file.")
         print("Copy config.py.EXAMPLE to config.py and adapt it for your setup.")
         exit(1)
+
+
+def recordprofile(csvfile, targettemp):
 
     script_dir = os.path.dirname(os.path.realpath(__file__))
     sys.path.insert(0, script_dir + '/lib/')
@@ -32,6 +32,7 @@ def recordprofile(csvfile, targettemp):
     # construct the oven
     if config.simulate:
         oven = SimulatedOven()
+        oven.target = targettemp * 2 # insures max heating for simulation
     else:
         oven = RealOven()
 
@@ -42,35 +43,43 @@ def recordprofile(csvfile, targettemp):
     # * wait for it to decay back to the target again.
     # * quit
     #
-    # We record the temperature every second
+    # We record the temperature every config.sensor_time_wait
     try:
-        stage = 'heating'
-        if not config.simulate:
-            oven.output.heat(0)
 
-        while True:
-            temp = oven.board.temp_sensor.temperature + \
+        # heating to target of 400F
+        temp = 0
+        sleepfor = config.sensor_time_wait
+        stage = "heating"
+        while(temp <= targettemp):
+            if config.simulate:
+                oven.heat_then_cool()
+            else:
+                oven.output.heat(sleepfor)
+            temp = oven.board.temp_sensor.temperature() + \
                 config.thermocouple_offset
-
+            
+            print("stage = %s, actual = %.2f, target = %.2f" % (stage,temp,targettemp))
             csvout.writerow([time.time(), temp])
             f.flush()
 
-            if stage == 'heating':
-                if temp >= targettemp:
-                    if not config.simulate:
-                        oven.output.cool(0)
-                    stage = 'cooling'
-
-            elif stage == 'cooling':
-                if temp < targettemp:
-                    break
-
-            print("stage = %s, actual = %s, target = %s" % (stage,temp,targettemp))
-            time.sleep(1)
-
-        f.close()
+        # overshoot past target of 400F and then cooling down to 400F
+        stage = "cooling"
+        if config.simulate:
+            oven.target = 0
+        while(temp >= targettemp):
+            if config.simulate:
+                oven.heat_then_cool()
+            else:
+                oven.output.cool(sleepfor)
+            temp = oven.board.temp_sensor.temperature() + \
+                config.thermocouple_offset
+            
+            print("stage = %s, actual = %.2f, target = %.2f" % (stage,temp,targettemp))
+            csvout.writerow([time.time(), temp])
+            f.flush()
 
     finally:
+        f.close()
         # ensure we always shut the oven down!
         if not config.simulate:
             oven.output.cool(0)
@@ -175,34 +184,22 @@ def calculate(filename, tangentdivisor, showplot):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Kiln tuner')
-    subparsers = parser.add_subparsers()
-    parser.set_defaults(mode='')
-
-    parser_profile = subparsers.add_parser('recordprofile', help='Record kiln temperature profile')
-    parser_profile.add_argument('csvfile', type=str, help="The CSV file to write to.")
-    parser_profile.add_argument('--targettemp', type=int, default=400, help="The target temperature to drive the kiln to (default 400).")
-    parser_profile.set_defaults(mode='recordprofile')
-
-    parser_zn = subparsers.add_parser('zn', help='Calculate Ziegler-Nicols parameters')
-    parser_zn.add_argument('csvfile', type=str, help="The CSV file to read from. Must contain two columns called time (time in seconds) and temperature (observed temperature)")
-    parser_zn.add_argument('--showplot', action='store_true', help="If set, also plot results (requires pyplot to be pip installed)")
-    parser_zn.add_argument('--tangentdivisor', type=float, default=8, help="Adjust the tangent calculation to fit better. Must be >= 2 (default 8).")
-    parser_zn.set_defaults(mode='zn')
-
+    parser.add_argument('-c', '--calculate_only', action='store_true')
+    parser.add_argument('-t', '--target_temp', type=float, default=400, help="Target temperature")
+    parser.add_argument('-d', '--tangent_divisor', type=float, default=8, help="Adjust the tangent calculation to fit better. Must be >= 2 (default 8).")
+    parser.add_argument('-s', '--showplot', action='store_true', help="draw plot so you can see tanget line and possibly change")
     args = parser.parse_args()
 
-    if args.mode == 'recordprofile':
-        recordprofile(args.csvfile, args.targettemp)
+    csvfile = "tuning.csv"
+    target = args.target_temp
+    if config.temp_scale.lower() == "c":
+        target = (target - 32)*5/9
+    tangentdivisor = args.tangent_divisor 
 
-    elif args.mode == 'zn':
-        if args.tangentdivisor < 2:
-            raise ValueError("tangentdivisor must be >= 2")
-
-        calculate(args.csvfile, args.tangentdivisor, args.showplot)
-
-    elif args.mode == '':
-        parser.print_help()
-        exit(1)
-
+    # default behavior is to record profile to csv file tuning.csv
+    # and then calculate pid values and print them
+    if args.calculate_only:
+        calculate(csvfile, tangentdivisor, args.showplot)
     else:
-        raise NotImplementedError("Unknown mode %s" % args.mode)
+        recordprofile(csvfile, target)
+        calculate(csvfile, tangentdivisor, args.showplot)

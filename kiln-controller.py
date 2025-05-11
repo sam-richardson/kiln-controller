@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import time
 import os
 import sys
 import logging
@@ -14,15 +15,8 @@ from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket import WebSocketError
 
-try:
-    sys.dont_write_bytecode = True
-    import config
-
-    sys.dont_write_bytecode = False
-except:
-    print("Could not import config file.")
-    print("Copy config.py.EXAMPLE to config.py and adapt it for your setup.")
-    exit(1)
+# try/except removed here on purpose so folks can see why things break
+import config
 
 logging.basicConfig(level=config.log_level, format=config.log_format)
 log = logging.getLogger("kiln-controller")
@@ -76,6 +70,11 @@ def handle_api():
         if "startat" in bottle.request.json:
             startat = bottle.request.json["startat"]
 
+        #Shut off seek if start time has been set
+        allow_seek = True
+        if startat > 0:
+            allow_seek = False
+
         # get the wanted profile/kiln schedule
         profile = find_profile(wanted)
         if profile is None:
@@ -84,7 +83,7 @@ def handle_api():
         # FIXME juggling of json should happen in the Profile class
         profile_json = json.dumps(profile)
         profile = Profile(profile_json)
-        oven.run_profile(profile, startat=startat)
+        oven.run_profile(profile, startat=startat, allow_seek=allow_seek)
         ovenWatcher.record(profile)
 
     if bottle.request.json["cmd"] == "stop":
@@ -171,6 +170,7 @@ def handle_control():
                 elif msgdict.get("cmd") == "STOP":
                     log.info("Stop command received")
                     oven.abort_run()
+            time.sleep(1)
         except WebSocketError as e:
             log.error(e)
             break
@@ -218,6 +218,7 @@ def handle_storage():
 
                     wsock.send(json.dumps(msgdict))
                     wsock.send(get_profiles())
+            time.sleep(1) 
         except WebSocketError:
             break
     log.info("websocket (storage) closed")
@@ -233,6 +234,7 @@ def handle_config():
             wsock.send(get_config())
         except WebSocketError:
             break
+        time.sleep(1)
     log.info("websocket (config) closed")
 
 
@@ -247,6 +249,7 @@ def handle_status():
             wsock.send("Your message was: %r" % message)
         except WebSocketError:
             break
+        time.sleep(1)
     log.info("websocket (status) closed")
 
 
@@ -305,7 +308,7 @@ def get_config():
 
 
 def main():
-    ip = "0.0.0.0"
+    ip = "127.0.0.1"
     port = config.listening_port
     log.info("listening on %s:%d" % (ip, port))
 

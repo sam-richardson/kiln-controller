@@ -8,4 +8,9 @@ thumbs.db
 #storage/profiles
 #config.py
 .idea/*
+<<<<<<< HEAD
+state.json
+venv/*
+=======
 .DS_Store
+>>>>>>> origin/master

@@ -33,7 +33,7 @@ class OvenWatcher(threading.Thread):
                 self.recording = False
             self.notify_all(oven_state)
             time.sleep(self.oven.time_step)
-   
+
     def lastlog_subset(self,maxpts=50):
         '''send about maxpts from lastlog by skipping unwanted data'''
         totalpts = len(self.last_log)
@@ -79,6 +79,7 @@ class OvenWatcher(threading.Thread):
     def notify_all(self,message):
         message_json = json.dumps(message)
         log.debug("sending to %d clients: %s"%(len(self.observers),message_json))
+
         for wsock in self.observers:
             if wsock:
                 try:
