@@ -1,21 +1,44 @@
 #!/usr/bin/env python
+"""kiln-controller entry point.
 
-import time
+Routes:
+    GET  /                          redirect to UI
+    GET  /picoreflow/<path>         static UI files
+
+    HTTP API (POST JSON to /api):
+        cmd=run    {profile}            start a firing
+        cmd=stop                        abort the run
+        cmd=memo   {memo}               annotate the log
+        cmd=stats                       return PID stats
+    GET  /api/stats                     PID stats (snapshot)
+    GET  /api/config                    current config snapshot (UI)
+    POST /api/config                    update a subset of safe config keys
+    GET  /api/history                   list recent firings
+    GET  /api/history/<id>              full firing detail (target+actual curves)
+    DELETE /api/history/<id>            delete a firing
+    POST /api/profile/import            convert an Orton-style spec to a
+                                        waypoint profile (saves it too)
+    POST /api/auth/change-password      rotate the controller password
+
+    WebSockets:
+        /control    run/stop commands
+        /storage    list/save/delete profiles
+        /config     stream the current config to the client
+        /status     stream live oven state to the client
+"""
+import json
+import logging
 import os
 import sys
-import logging
-import json
+import time
 
 import bottle
 import gevent
 import geventwebsocket
-
-# from bottle import post, get
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket import WebSocketError
 
-# try/except removed here on purpose so folks can see why things break
 import config
 
 logging.basicConfig(level=config.log_level, format=config.log_format)
@@ -26,20 +49,53 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, script_dir + "/lib/")
 profile_path = config.kiln_profiles_directory
 
-from oven import SimulatedOven, RealOven, Profile
-from ovenWatcher import OvenWatcher
+import auth  # noqa: E402  - sys.path was just patched
+import notifications  # noqa: E402
+from oven import SimulatedOven, RealOven, Profile  # noqa: E402
+from ovenWatcher import OvenWatcher  # noqa: E402
+from profile_importer import orton_to_waypoints  # noqa: E402
 
 app = bottle.Bottle()
 
-if config.simulate == True:
+# Initialize auth file (no-op if disabled).
+auth.init()
+
+if config.simulate is True:
     log.info("this is a simulation")
     oven = SimulatedOven()
 else:
     log.info("this is a real kiln")
     oven = RealOven()
 ovenWatcher = OvenWatcher(oven)
-# this ovenwatcher is used in the oven class for restarts
 oven.set_ovenwatcher(ovenWatcher)
+
+
+# --------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------- #
+
+
+def _check_auth_or_401():
+    """Returns None if request is authorized, else a 401 response body."""
+    if auth.check_request_auth():
+        return None
+    bottle.response.headers["WWW-Authenticate"] = (
+        'Basic realm="kiln-controller"'
+    )
+    bottle.response.status = 401
+    return {"success": False, "error": "auth required"}
+
+
+def _json_request_body():
+    try:
+        return bottle.request.json or {}
+    except Exception:
+        return {}
+
+
+# --------------------------------------------------------------------- #
+# Static + index
+# --------------------------------------------------------------------- #
 
 
 @app.route("/")
@@ -47,94 +103,316 @@ def index():
     return bottle.redirect("/picoreflow/index.html")
 
 
+@app.route("/picoreflow/:filename#.*#")
+def send_static(filename):
+    log.debug("serving %s", filename)
+    return bottle.static_file(
+        filename,
+        root=os.path.join(
+            os.path.dirname(os.path.realpath(sys.argv[0])), "public"
+        ),
+    )
+
+
+# --------------------------------------------------------------------- #
+# /api - control + stats
+# --------------------------------------------------------------------- #
+
+
 @app.get("/api/stats")
-def handle_api():
+def api_stats():
     log.info("/api/stats command received")
-    if hasattr(oven, "pid"):
-        if hasattr(oven.pid, "pidstats"):
-            return json.dumps(oven.pid.pidstats)
+    if hasattr(oven, "pid") and hasattr(oven.pid, "pidstats"):
+        return json.dumps(oven.pid.pidstats)
 
 
 @app.post("/api")
-def handle_api():
+def api():
+    err = _check_auth_or_401()
+    if err is not None:
+        return err
+
+    body = _json_request_body()
     log.info("/api is alive")
 
-    # run a kiln schedule
-    if bottle.request.json["cmd"] == "run":
-        wanted = bottle.request.json["profile"]
-        log.info("api requested run of profile = %s" % wanted)
+    cmd = body.get("cmd")
 
-        # start at a specific minute in the schedule
-        # for restarting and skipping over early parts of a schedule
-        startat = 0
-        if "startat" in bottle.request.json:
-            startat = bottle.request.json["startat"]
+    if cmd == "run":
+        wanted = body["profile"]
+        log.info("api requested run of profile = %s", wanted)
+        startat = body.get("startat", 0) or 0
+        allow_seek = startat <= 0
 
-        #Shut off seek if start time has been set
-        allow_seek = True
-        if startat > 0:
-            allow_seek = False
-
-        # get the wanted profile/kiln schedule
         profile = find_profile(wanted)
         if profile is None:
-            return {"success": False, "error": "profile %s not found" % wanted}
+            return {"success": False,
+                    "error": "profile %s not found" % wanted}
 
-        # FIXME juggling of json should happen in the Profile class
-        profile_json = json.dumps(profile)
-        profile = Profile(profile_json)
-        oven.run_profile(profile, startat=startat, allow_seek=allow_seek)
-        ovenWatcher.record(profile)
+        profile_obj = Profile(json.dumps(profile))
+        oven.run_profile(profile_obj, startat=startat, allow_seek=allow_seek)
+        ovenWatcher.record(profile_obj)
 
-    if bottle.request.json["cmd"] == "stop":
+    elif cmd == "stop":
         log.info("api stop command received")
-        oven.abort_run()
+        oven.abort_run(outcome="aborted", reason="user stop via /api")
 
-    if bottle.request.json["cmd"] == "memo":
+    elif cmd == "memo":
         log.info("api memo command received")
-        memo = bottle.request.json["memo"]
-        log.info("memo=%s" % (memo))
+        memo = body.get("memo")
+        log.info("memo=%s", memo)
 
-    # get stats during a run
-    if bottle.request.json["cmd"] == "stats":
+    elif cmd == "stats":
         log.info("api stats command received")
-        if hasattr(oven, "pid"):
-            if hasattr(oven.pid, "pidstats"):
-                return json.dumps(oven.pid.pidstats)
+        if hasattr(oven, "pid") and hasattr(oven.pid, "pidstats"):
+            return json.dumps(oven.pid.pidstats)
 
     return {"success": True}
 
 
+# --------------------------------------------------------------------- #
+# /api/config - read and write a safe subset of config
+# --------------------------------------------------------------------- #
+
+
+# keys that the web UI is allowed to modify at runtime
+EDITABLE_CONFIG_KEYS = {
+    # tuning
+    "pid_kp", "pid_ki", "pid_kd",
+    "pid_control_window",
+    "pid_d_spike_limit_enabled",
+    "pid_d_spike_limit",
+    "pid_d_filter_alpha",
+    "throttle_below_temp", "throttle_percent",
+    # economics
+    "kwh_rate", "kw_elements", "currency_type",
+    # display
+    "temp_scale", "time_scale_slope", "time_scale_profile",
+    # safety
+    "emergency_shutoff_temp",
+    "kiln_must_catch_up",
+    "hold_auto_extend",
+    "hold_at_temp_tolerance",
+    "thermocouple_offset",
+    "element_failure_detection",
+    "element_failure_min_full_duty_seconds",
+    "element_failure_min_heat_rate",
+    "element_failure_min_temp",
+    "cool_down_safe_open_temp",
+    "cool_down_notify_on_complete",
+    "cool_down_notify_on_safe_open",
+    "multi_tc_delta_alert_degrees",
+    # notifications - safe to edit at runtime
+    "notify_email_enabled", "notify_email_to",
+    "notify_pushover_enabled",
+    "notify_ntfy_enabled", "notify_ntfy_topic",
+    "notify_slack_enabled",
+}
+
+
+@app.get("/api/config")
+def api_config_get():
+    err = _check_auth_or_401()
+    if err is not None:
+        return err
+    out = {}
+    for k in EDITABLE_CONFIG_KEYS:
+        if hasattr(config, k):
+            out[k] = getattr(config, k)
+    bottle.response.content_type = "application/json"
+    return json.dumps(out)
+
+
+@app.post("/api/config")
+def api_config_set():
+    err = _check_auth_or_401()
+    if err is not None:
+        return err
+    body = _json_request_body()
+    if not isinstance(body, dict):
+        return {"success": False, "error": "expected JSON object"}
+    changed = {}
+    rejected = []
+    for k, v in body.items():
+        if k not in EDITABLE_CONFIG_KEYS:
+            rejected.append(k)
+            continue
+        setattr(config, k, v)
+        changed[k] = v
+    log.info("/api/config updated keys=%s rejected=%s",
+             list(changed.keys()), rejected)
+    return {"success": True, "changed": changed, "rejected": rejected}
+
+
+# --------------------------------------------------------------------- #
+# /api/history - past firings (#8)
+# --------------------------------------------------------------------- #
+
+
+@app.get("/api/history")
+def api_history_list():
+    err = _check_auth_or_401()
+    if err is not None:
+        return err
+    try:
+        limit = int(bottle.request.query.get("limit", 50))
+    except ValueError:
+        limit = 50
+    bottle.response.content_type = "application/json"
+    return json.dumps({"firings": oven.history.list_firings(limit=limit)})
+
+
+@app.get("/api/history/<firing_id:int>")
+def api_history_get(firing_id):
+    err = _check_auth_or_401()
+    if err is not None:
+        return err
+    firing = oven.history.get_firing(firing_id)
+    if firing is None:
+        bottle.response.status = 404
+        return {"success": False, "error": "not found"}
+    bottle.response.content_type = "application/json"
+    return json.dumps(firing)
+
+
+@app.delete("/api/history/<firing_id:int>")
+def api_history_delete(firing_id):
+    err = _check_auth_or_401()
+    if err is not None:
+        return err
+    ok = oven.history.delete_firing(firing_id)
+    return {"success": ok}
+
+
+# --------------------------------------------------------------------- #
+# /api/profile/import - Orton ramp/hold spec -> waypoint profile (#10)
+# --------------------------------------------------------------------- #
+
+
+@app.post("/api/profile/import")
+def api_profile_import():
+    err = _check_auth_or_401()
+    if err is not None:
+        return err
+    body = _json_request_body()
+    save = bool(body.pop("save", True))
+    try:
+        profile = orton_to_waypoints(body)
+    except (ValueError, KeyError, TypeError) as exc:
+        bottle.response.status = 400
+        return {"success": False, "error": str(exc)}
+    if save:
+        save_profile(profile, force=True)
+    return {"success": True, "profile": profile}
+
+
+# --------------------------------------------------------------------- #
+# /api/auth/change-password - rotate password (#11)
+# --------------------------------------------------------------------- #
+
+
+@app.post("/api/auth/change-password")
+def api_change_password():
+    if not auth.is_enabled():
+        return {"success": False, "error": "auth disabled"}
+    err = _check_auth_or_401()
+    if err is not None:
+        return err
+    body = _json_request_body()
+    if not body.get("old_password") or not body.get("new_password"):
+        return {"success": False,
+                "error": "old_password and new_password required"}
+    if len(body["new_password"]) < 6:
+        return {"success": False,
+                "error": "new password must be at least 6 chars"}
+    ok = auth.change_password(body["old_password"], body["new_password"])
+    return {"success": ok, "error": None if ok else "old password incorrect"}
+
+
+# --------------------------------------------------------------------- #
+# Profile helpers
+# --------------------------------------------------------------------- #
+
+
 def find_profile(wanted):
-    """
-    given a wanted profile name, find it and return the parsed
-    json profile object or None.
-    """
-    # load all profiles from disk
     profiles = get_profiles()
     json_profiles = json.loads(profiles)
-
-    # find the wanted profile
     for profile in json_profiles:
         if profile["name"] == wanted:
             return profile
     return None
 
 
-@app.route("/picoreflow/:filename#.*#")
-def send_static(filename):
-    log.debug("serving %s" % filename)
-    return bottle.static_file(
-        filename,
-        root=os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), "public"),
+def get_profiles():
+    try:
+        profile_files = os.listdir(profile_path)
+        profile_files.sort()
+    except OSError:
+        profile_files = []
+    profiles = []
+    for filename in profile_files:
+        if filename.startswith("._"):
+            continue
+        if filename.endswith(".json"):
+            with open(os.path.join(profile_path, filename), "r") as f:
+                profiles.append(json.load(f))
+    return json.dumps(profiles)
+
+
+def save_profile(profile, force=False):
+    profile_json = json.dumps(profile)
+    filename = profile["name"] + ".json"
+    filepath = os.path.join(profile_path, filename)
+    if not force and os.path.exists(filepath):
+        log.error("Could not write, %s already exists", filepath)
+        return False
+    with open(filepath, "w+") as f:
+        f.write(profile_json)
+    log.info("Wrote %s", filepath)
+    return True
+
+
+def delete_profile(profile):
+    filename = profile["name"] + ".json"
+    filepath = os.path.join(profile_path, filename)
+    os.remove(filepath)
+    log.info("Deleted %s", filepath)
+    return True
+
+
+def get_config_for_ui():
+    """Subset of config served to the read-only UI websocket."""
+    return json.dumps(
+        {
+            "temp_scale": config.temp_scale,
+            "time_scale_slope": config.time_scale_slope,
+            "time_scale_profile": config.time_scale_profile,
+            "kwh_rate": config.kwh_rate,
+            "currency_type": config.currency_type,
+            "auth_enabled": config.auth_enabled,
+            "history_enabled": config.history_enabled,
+            "multiple_thermocouples": getattr(
+                config, "multiple_thermocouples", False
+            ),
+        }
     )
+
+
+# --------------------------------------------------------------------- #
+# Websockets
+# --------------------------------------------------------------------- #
 
 
 def get_websocket_from_request():
     env = bottle.request.environ
     wsock = env.get("wsgi.websocket")
     if not wsock:
-        abort(400, "Expected WebSocket request.")
+        bottle.abort(400, "Expected WebSocket request.")
+    if not auth.check_websocket_auth(env):
+        try:
+            wsock.close()
+        except Exception:
+            pass
+        bottle.abort(401, "auth required")
     return wsock
 
 
@@ -142,34 +420,27 @@ def get_websocket_from_request():
 def handle_control():
     wsock = get_websocket_from_request()
     log.info("websocket (control) opened")
+    profile = None
     while True:
         try:
             message = wsock.receive()
             if message:
-                log.info("Received (control): %s" % message)
+                log.info("Received (control): %s", message)
                 msgdict = json.loads(message)
                 if msgdict.get("cmd") == "RUN":
                     log.info("RUN command received")
                     profile_obj = msgdict.get("profile")
                     if profile_obj:
-                        profile_json = json.dumps(profile_obj)
-                        profile = Profile(profile_json)
-                    oven.run_profile(profile)
-                    ovenWatcher.record(profile)
+                        profile = Profile(json.dumps(profile_obj))
+                    if profile is not None:
+                        oven.run_profile(profile)
+                        ovenWatcher.record(profile)
                 elif msgdict.get("cmd") == "SIMULATE":
                     log.info("SIMULATE command received")
-                    # profile_obj = msgdict.get('profile')
-                    # if profile_obj:
-                    #    profile_json = json.dumps(profile_obj)
-                    #    profile = Profile(profile_json)
-                    # simulated_oven = Oven(simulate=True, time_step=0.05)
-                    # simulation_watcher = OvenWatcher(simulated_oven)
-                    # simulation_watcher.add_observer(wsock)
-                    # simulated_oven.run_profile(profile)
-                    # simulation_watcher.record(profile)
                 elif msgdict.get("cmd") == "STOP":
                     log.info("Stop command received")
-                    oven.abort_run()
+                    oven.abort_run(outcome="aborted",
+                                   reason="user stop via /control")
             time.sleep(1)
         except WebSocketError as e:
             log.error(e)
@@ -186,11 +457,10 @@ def handle_storage():
             message = wsock.receive()
             if not message:
                 break
-            log.debug("websocket (storage) received: %s" % message)
-
+            log.debug("websocket (storage) received: %s", message)
             try:
                 msgdict = json.loads(message)
-            except:
+            except Exception:
                 msgdict = {}
 
             if message == "GET":
@@ -202,23 +472,19 @@ def handle_storage():
                 if delete_profile(profile_obj):
                     msgdict["resp"] = "OK"
                 wsock.send(json.dumps(msgdict))
-                # wsock.send(get_profiles())
             elif msgdict.get("cmd") == "PUT":
                 log.info("PUT command received")
                 profile_obj = msgdict.get("profile")
-                # force = msgdict.get('force', False)
                 force = True
                 if profile_obj:
-                    # del msgdict["cmd"]
                     if save_profile(profile_obj, force):
                         msgdict["resp"] = "OK"
                     else:
                         msgdict["resp"] = "FAIL"
-                    log.debug("websocket (storage) sent: %s" % message)
-
+                    log.debug("websocket (storage) sent: %s", message)
                     wsock.send(json.dumps(msgdict))
                     wsock.send(get_profiles())
-            time.sleep(1) 
+            time.sleep(1)
         except WebSocketError:
             break
     log.info("websocket (storage) closed")
@@ -230,8 +496,8 @@ def handle_config():
     log.info("websocket (config) opened")
     while True:
         try:
-            message = wsock.receive()
-            wsock.send(get_config())
+            wsock.receive()
+            wsock.send(get_config_for_ui())
         except WebSocketError:
             break
         time.sleep(1)
@@ -253,65 +519,15 @@ def handle_status():
     log.info("websocket (status) closed")
 
 
-def get_profiles():
-    try:
-        profile_files = os.listdir(profile_path)
-        profile_files.sort()
-    except:
-        profile_files = []
-    profiles = []
-    for filename in profile_files:
-        if filename.startswith("._"):
-            pass
-        else:
-            if filename.endswith(".json"):
-                with open(os.path.join(profile_path, filename), "r") as f:
-                    profiles.append(json.load(f))
-            else:
-                pass
-    return json.dumps(profiles)
-
-
-def save_profile(profile, force=False):
-    profile_json = json.dumps(profile)
-    filename = profile["name"] + ".json"
-    filepath = os.path.join(profile_path, filename)
-    if not force and os.path.exists(filepath):
-        log.error("Could not write, %s already exists" % filepath)
-        return False
-    with open(filepath, "w+") as f:
-        f.write(profile_json)
-        f.close()
-    log.info("Wrote %s" % filepath)
-    return True
-
-
-def delete_profile(profile):
-    profile_json = json.dumps(profile)
-    filename = profile["name"] + ".json"
-    filepath = os.path.join(profile_path, filename)
-    os.remove(filepath)
-    log.info("Deleted %s" % filepath)
-    return True
-
-
-def get_config():
-    return json.dumps(
-        {
-            "temp_scale": config.temp_scale,
-            "time_scale_slope": config.time_scale_slope,
-            "time_scale_profile": config.time_scale_profile,
-            "kwh_rate": config.kwh_rate,
-            "currency_type": config.currency_type,
-        }
-    )
+# --------------------------------------------------------------------- #
+# Main
+# --------------------------------------------------------------------- #
 
 
 def main():
-    ip = "127.0.0.1"
+    ip = getattr(config, "listening_host", "0.0.0.0")
     port = config.listening_port
-    log.info("listening on %s:%d" % (ip, port))
-
+    log.info("listening on %s:%d", ip, port)
     server = WSGIServer((ip, port), app, handler_class=WebSocketHandler)
     server.serve_forever()
 

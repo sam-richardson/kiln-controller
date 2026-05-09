@@ -59,6 +59,9 @@
      <button id="btn_new" type="button" class="btn btn-default" onclick="enterNewMode(selected_profile)"><span class="glyphicon glyphicon-plus"></span></button>
     </div>
    <div id="btn_controls" class="pull-right" style="margin-top: 3px">
+    <button id="btn_import" type="button" class="btn btn-default" data-toggle="modal" data-target="#ortonImportModal" title="Import Orton-style ramp/hold profile"><span class="glyphicon glyphicon-import"></span></button>
+    <button id="btn_history" type="button" class="btn btn-default" data-toggle="modal" data-target="#historyModal" onclick="loadHistory()" title="Firing history"><span class="glyphicon glyphicon-time"></span></button>
+    <button id="btn_settings" type="button" class="btn btn-default" data-toggle="modal" data-target="#settingsModal" onclick="loadSettings()" title="Settings"><span class="glyphicon glyphicon-cog"></span></button>
     <div id="nav_start" class="btn-group" style="display:none">
      <button type="button" class="btn btn-default" style="visibility: hidden;"  onclick="runTaskSimulation();">Simulate</button>
      <button type="button" class="btn btn-success" data-toggle="modal" data-target="#jobSummaryModal"><span class="glyphicon glyphicon-play"></span> Start</button>
@@ -133,6 +136,77 @@
       <button type="button" class="btn btn-danger" style="width: 50%" data-dismiss="modal">No, take me back</button>
       <button type="button" class="btn btn-success" style="width: 50%" data-dismiss="modal" onclick="deleteProfile()">Yes, delete the profile</button>
      </div>
+    </div>
+   </div>
+  </div>
+ </div>
+
+ <!-- ====== Settings (config UI) Modal ====== -->
+ <div id="settingsModal" class="modal fade" tabindex="-1" aria-hidden="true" style="display: none;">
+  <div class="modal-dialog modal-lg">
+   <div class="modal-content">
+    <div class="modal-header">
+     <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+     <h3 class="modal-title">Settings</h3>
+     <small>Edit a safe subset of <code>config.py</code> at runtime. Survives until process restart.<br/>Permanent changes still require editing <code>config.py</code>.</small>
+    </div>
+    <div class="modal-body" id="settingsBody">
+     <p>Loading...</p>
+    </div>
+    <div class="modal-footer">
+     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+     <button type="button" class="btn btn-success" onclick="saveSettings()">Save</button>
+    </div>
+   </div>
+  </div>
+ </div>
+
+ <!-- ====== Firing History Modal ====== -->
+ <div id="historyModal" class="modal fade" tabindex="-1" aria-hidden="true" style="display: none;">
+  <div class="modal-dialog modal-lg">
+   <div class="modal-content">
+    <div class="modal-header">
+     <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+     <h3 class="modal-title">Firing History</h3>
+    </div>
+    <div class="modal-body" id="historyBody">
+     <p>Loading...</p>
+    </div>
+    <div class="modal-footer">
+     <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+    </div>
+   </div>
+  </div>
+ </div>
+
+ <!-- ====== Orton Import Modal ====== -->
+ <div id="ortonImportModal" class="modal fade" tabindex="-1" aria-hidden="true" style="display: none;">
+  <div class="modal-dialog">
+   <div class="modal-content">
+    <div class="modal-header">
+     <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+     <h3 class="modal-title">Import Orton-style schedule</h3>
+     <small>Paste a JSON spec with <code>name</code>, <code>start_temp</code>, and <code>segments</code>. Each segment is <code>{type: ramp|hold|cool, rate: deg/hr, target: deg, minutes: int}</code>.</small>
+    </div>
+    <div class="modal-body">
+     <textarea id="ortonImportText" class="form-control" rows="14" placeholder='{
+  "name": "cone-6-glaze-orton",
+  "start_temp": 70,
+  "segments": [
+    {"type": "ramp", "rate": 200, "target": 250},
+    {"type": "hold", "minutes": 30},
+    {"type": "ramp", "rate": 400, "target": 1900},
+    {"type": "ramp", "rate": 108, "target": 2232},
+    {"type": "hold", "minutes": 10},
+    {"type": "cool", "rate": 9999, "target": 1500},
+    {"type": "ramp", "rate": 100, "target": 1500}
+  ]
+}'></textarea>
+     <p id="ortonImportResult" style="margin-top:10px"></p>
+    </div>
+    <div class="modal-footer">
+     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+     <button type="button" class="btn btn-success" onclick="submitOrtonImport()">Import</button>
     </div>
    </div>
   </div>

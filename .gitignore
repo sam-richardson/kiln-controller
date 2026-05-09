@@ -3,14 +3,28 @@
 \#*
 .#*
 *.swp
+.DS_Store
 .DStore/
 thumbs.db
-#storage/profiles
-#config.py
 .idea/*
-<<<<<<< HEAD
+.vscode/
+
+# Runtime state
 state.json
-venv/*
-=======
-.DS_Store
->>>>>>> origin/master
+locked_profile.json
+
+# Virtualenvs
+venv/
+.venv/
+
+# Firing history database (kept under storage/, but never commit)
+storage/history.db
+storage/history.db-journal
+storage/history.db-wal
+storage/history.db-shm
+
+# Auth secrets file (created at first run, contains hashed password)
+auth.json
+
+# Local override config
+config_local.py
