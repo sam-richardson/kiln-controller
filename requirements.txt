@@ -1,25 +1,47 @@
-setuptools
-greenlet
-bottle
-gevent
-gevent-websocket
-websocket-client
-requests
+# =====================================================================
+# kiln-controller dependencies
+#
+# Pinned to recent, known-good versions (Python 3.9+ on Raspberry Pi OS
+# Bookworm). If you are on an older Pi OS / Python 3.7 you may need to
+# loosen some pins; see CHANGES.md.
+# =====================================================================
 
-# for folks running raspberry pis
-# we have no proof of anyone using another board yet, but when that 
-# happens, you might want to comment this out.
-RPi.GPIO
+# --- Web server stack -------------------------------------------------
+# Bottle is a tiny WSGI framework; gevent provides green-thread
+# concurrency; gevent-websocket bolts WebSocket support onto bottle.
+bottle>=0.12.25,<0.14
+gevent>=23.9.1
+gevent-websocket==0.10.1
+greenlet>=2.0.2
+setuptools>=65
 
-# List of all supported adafruit modules for thermocouples
-adafruit-circuitpython-max31855
-adafruit-circuitpython-max31856
+# --- HTTP client (used by watcher.py and notifications.py) -----------
+requests>=2.31.0,<3
+websocket-client>=1.7.0
 
-# for folks using sw spi (bit banging)
-adafruit-circuitpython-bitbangio
+# --- Raspberry Pi GPIO ------------------------------------------------
+# Most modern installs use lgpio under the hood (Bookworm default);
+# RPi.GPIO is still pulled in for compatibility with older Pi OS.
+# RPi.GPIO can be skipped on non-Pi hardware - the simulator does not
+# need it.
+RPi.GPIO ; platform_machine == "armv7l" or platform_machine == "aarch64" or platform_machine == "armv6l"
 
-# untested - for PT100 platinum thermocouples
+# --- Adafruit / Blinka thermocouple drivers --------------------------
+# Blinka is auto-pulled-in by the Adafruit MAX boards.
+adafruit-circuitpython-max31855>=2.6.0
+adafruit-circuitpython-max31856>=1.4.0
+adafruit-circuitpython-bitbangio>=2.4.0
+
+# --- Cryptography ----------------------------------------------------
+# pbkdf2 hashing is implemented with stdlib hashlib so no extra crypto
+# dependency is required for auth. cryptography is pulled in here only
+# if you want to wrap the controller behind HTTPS (recommended for any
+# network-exposed install). Uncomment if you are generating a self-
+# signed certificate via Python.
+# cryptography>=41.0.7
+
+# --- (untested - PT100 thermocouples) ---
 #adafruit-circuitpython-max31865
 
-# untested - for mcp9600 and mcp9601
+# --- (untested - mcp9600/mcp9601 thermocouples) ---
 #adafruit-circuitpython-mcp9600

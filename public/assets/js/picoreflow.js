@@ -725,3 +725,241 @@ $(document).ready(function()
 
     }
 });
+
+// ===================================================================
+// Settings (config UI) - GET/POST /api/config
+// ===================================================================
+
+function loadSettings() {
+    $.ajax({
+        url: "/api/config",
+        type: "GET",
+        success: function(data) {
+            renderSettings(data);
+        },
+        error: function() {
+            $("#settingsBody").html("<p class='text-danger'>Failed to load settings (auth required?).</p>");
+        }
+    });
+}
+
+function renderSettings(cfg) {
+    var groups = {
+        "PID tuning": [
+            "pid_kp", "pid_ki", "pid_kd", "pid_control_window",
+            "pid_d_spike_limit_enabled", "pid_d_spike_limit", "pid_d_filter_alpha",
+            "throttle_below_temp", "throttle_percent"
+        ],
+        "Cost / display": [
+            "kwh_rate", "kw_elements", "currency_type",
+            "temp_scale", "time_scale_slope", "time_scale_profile"
+        ],
+        "Safety": [
+            "emergency_shutoff_temp", "kiln_must_catch_up",
+            "hold_auto_extend", "hold_at_temp_tolerance",
+            "thermocouple_offset",
+            "element_failure_detection",
+            "element_failure_min_full_duty_seconds",
+            "element_failure_min_heat_rate", "element_failure_min_temp",
+            "cool_down_safe_open_temp",
+            "cool_down_notify_on_complete", "cool_down_notify_on_safe_open",
+            "multi_tc_delta_alert_degrees"
+        ],
+        "Notifications": [
+            "notify_email_enabled", "notify_email_to",
+            "notify_pushover_enabled",
+            "notify_ntfy_enabled", "notify_ntfy_topic",
+            "notify_slack_enabled"
+        ]
+    };
+
+    var html = "";
+    for (var group in groups) {
+        html += "<h4>" + group + "</h4><table class='table table-condensed'><tbody>";
+        groups[group].forEach(function(key) {
+            if (!(key in cfg)) return;
+            var v = cfg[key];
+            var input;
+            if (typeof v === "boolean") {
+                input = "<input type='checkbox' data-key='" + key + "' data-type='bool'" +
+                        (v ? " checked" : "") + ">";
+            } else if (typeof v === "number") {
+                input = "<input type='number' step='any' class='form-control' " +
+                        "data-key='" + key + "' data-type='number' value='" + v + "'>";
+            } else if (Array.isArray(v)) {
+                input = "<input type='text' class='form-control' " +
+                        "data-key='" + key + "' data-type='list' value='" +
+                        v.join(", ") + "'>";
+            } else {
+                input = "<input type='text' class='form-control' " +
+                        "data-key='" + key + "' data-type='string' value='" +
+                        (v == null ? "" : v) + "'>";
+            }
+            html += "<tr><td style='width:55%'><code>" + key + "</code></td>" +
+                    "<td>" + input + "</td></tr>";
+        });
+        html += "</tbody></table>";
+    }
+    $("#settingsBody").html(html);
+}
+
+function saveSettings() {
+    var payload = {};
+    $("#settingsBody [data-key]").each(function() {
+        var $el = $(this);
+        var key = $el.data("key");
+        var t = $el.data("type");
+        var v;
+        if (t === "bool") {
+            v = $el.is(":checked");
+        } else if (t === "number") {
+            v = parseFloat($el.val());
+            if (isNaN(v)) return;
+        } else if (t === "list") {
+            v = $el.val().split(",").map(function(s) { return s.trim(); })
+                                  .filter(function(s) { return s.length > 0; });
+        } else {
+            v = $el.val();
+        }
+        payload[key] = v;
+    });
+    $.ajax({
+        url: "/api/config",
+        type: "POST",
+        contentType: "application/json",
+        data: JSON.stringify(payload),
+        success: function(resp) {
+            if (resp && resp.success) {
+                $.bootstrapGrowl("Settings saved.", { type: "success", delay: 2000 });
+                $("#settingsModal").modal("hide");
+            } else {
+                $.bootstrapGrowl("Save failed.", { type: "error", delay: 4000 });
+            }
+        },
+        error: function() {
+            $.bootstrapGrowl("Save failed (auth required?).", { type: "error", delay: 4000 });
+        }
+    });
+}
+
+// ===================================================================
+// Firing history (#8) - GET /api/history, GET /api/history/<id>
+// ===================================================================
+
+function loadHistory() {
+    $.ajax({
+        url: "/api/history?limit=50",
+        type: "GET",
+        success: function(data) {
+            renderHistoryList(data && data.firings ? data.firings : []);
+        },
+        error: function() {
+            $("#historyBody").html("<p class='text-danger'>Failed to load history (auth required, or history disabled).</p>");
+        }
+    });
+}
+
+function renderHistoryList(firings) {
+    if (!firings.length) {
+        $("#historyBody").html("<p>No firings recorded yet.</p>");
+        return;
+    }
+    var html = "<table class='table table-striped'>";
+    html += "<thead><tr><th>#</th><th>Started</th><th>Profile</th><th>Outcome</th>" +
+            "<th>Peak</th><th>Cost</th><th></th></tr></thead><tbody>";
+    firings.forEach(function(f) {
+        html += "<tr>";
+        html += "<td>" + f.id + "</td>";
+        html += "<td>" + (f.started_at || "") + "</td>";
+        html += "<td>" + (f.profile_name || "") + "</td>";
+        html += "<td>" + (f.outcome || "") + "</td>";
+        html += "<td>" + (f.peak_temp != null ? Math.round(f.peak_temp) : "") + "</td>";
+        html += "<td>" + (f.currency_type || "") +
+                (f.total_cost != null ? f.total_cost.toFixed(2) : "") + "</td>";
+        html += "<td><button class='btn btn-xs btn-default' onclick='showFiring(" + f.id + ")'>View</button> " +
+                "<button class='btn btn-xs btn-danger' onclick='deleteFiring(" + f.id + ")'>Delete</button></td>";
+        html += "</tr>";
+    });
+    html += "</tbody></table><div id='firingDetail'></div>";
+    $("#historyBody").html(html);
+}
+
+function showFiring(id) {
+    $.ajax({
+        url: "/api/history/" + id,
+        type: "GET",
+        success: function(f) {
+            if (!f) {
+                $("#firingDetail").html("<p>Not found.</p>");
+                return;
+            }
+            var samples = f.samples || [];
+            var rows = samples.map(function(s) {
+                return "<tr><td>" + Math.round(s.runtime_s) + "</td>" +
+                       "<td>" + (s.target_temp != null ? Math.round(s.target_temp) : "") + "</td>" +
+                       "<td>" + (s.actual_temp != null ? Math.round(s.actual_temp) : "") + "</td>" +
+                       "<td>" + (s.heat_rate != null ? Math.round(s.heat_rate) : "") + "</td></tr>";
+            }).join("");
+            // tiny inline table; the full graph could be added here later
+            var html = "<h4>Firing #" + f.id + " - " + f.profile_name + "</h4>";
+            html += "<p>Started: " + f.started_at + "<br/>Ended: " +
+                    (f.ended_at || "(in progress)") + "<br/>Outcome: " + f.outcome +
+                    "<br/>Peak: " + Math.round(f.peak_temp || 0) +
+                    "<br/>Cost: " + (f.currency_type || "") +
+                    (f.total_cost != null ? f.total_cost.toFixed(2) : "") +
+                    "<br/>Notes: " + (f.notes || "") + "</p>";
+            html += "<div style='max-height:300px;overflow-y:auto'><table class='table table-condensed'>";
+            html += "<thead><tr><th>t (s)</th><th>target</th><th>actual</th><th>deg/hr</th></tr></thead>";
+            html += "<tbody>" + rows + "</tbody></table></div>";
+            $("#firingDetail").html(html);
+        }
+    });
+}
+
+function deleteFiring(id) {
+    if (!confirm("Delete firing #" + id + "?")) return;
+    $.ajax({
+        url: "/api/history/" + id,
+        type: "DELETE",
+        success: function() { loadHistory(); }
+    });
+}
+
+// ===================================================================
+// Orton ramp/hold importer (#10) - POST /api/profile/import
+// ===================================================================
+
+function submitOrtonImport() {
+    var raw = $("#ortonImportText").val();
+    var spec;
+    try {
+        spec = JSON.parse(raw);
+    } catch (e) {
+        $("#ortonImportResult").html("<span class='text-danger'>Invalid JSON: " + e + "</span>");
+        return;
+    }
+    spec.save = true;
+    $.ajax({
+        url: "/api/profile/import",
+        type: "POST",
+        contentType: "application/json",
+        data: JSON.stringify(spec),
+        success: function(resp) {
+            if (resp.success) {
+                $("#ortonImportResult").html(
+                    "<span class='text-success'>Imported as <b>" + resp.profile.name + "</b> (" +
+                    resp.profile.data.length + " waypoints). Reloading profile list...</span>");
+                ws_storage.send("GET");
+                setTimeout(function() { $("#ortonImportModal").modal("hide"); }, 1500);
+            } else {
+                $("#ortonImportResult").html(
+                    "<span class='text-danger'>Error: " + (resp.error || "unknown") + "</span>");
+            }
+        },
+        error: function(xhr) {
+            var msg = "request failed";
+            try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
+            $("#ortonImportResult").html("<span class='text-danger'>" + msg + "</span>");
+        }
+    });
+}
