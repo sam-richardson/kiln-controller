@@ -1106,7 +1106,9 @@ class RealOven(Oven):
     def __init__(self):
         self.board = RealBoard()
         self.output = Output()
-        self.reset()
+        # Oven.__init__ creates element_failure / history / pid and
+        # then calls reset() itself. Calling self.reset() before that
+        # would touch attributes that don't exist yet.
         Oven.__init__(self)
         self.start()
 
