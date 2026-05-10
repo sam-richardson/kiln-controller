@@ -40,13 +40,13 @@ currency_type   = "$"     # currency symbol shown in the UI
 
 try:
     import board
-    spi_sclk  = board.D15  # spi clock
-    spi_miso  = board.D11  # spi Microcomputer In Serial Out
-    spi_cs    = board.D13  # spi Chip Select for the primary thermocouple
-    spi_mosi  = board.D10  # spi Microcomputer Out Serial In (not connected for tc)
-    gpio_heat = board.D23  # output that controls the relay
-except (NotImplementedError, AttributeError, ImportError):
-    print("not running on a blinka-recognized board, probably a simulation")
+    spi_sclk  = board.D22  # spi clock
+    spi_miso  = board.D17  # spi Microcomputer In Serial Out
+    spi_cs    = board.D27  # spi Chip Select
+    spi_mosi  = board.D15  # spi Microcomputer Out Serial In (not connected)
+    gpio_heat = board.D23 #output that controls relay
+except (NotImplementedError,AttributeError):
+    print("not running on blinka recognized board, probably a simulation")
 
 #######################################
 ### Thermocouple breakout boards

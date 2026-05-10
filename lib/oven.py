@@ -1104,7 +1104,6 @@ class RealOven(Oven):
     def __init__(self):
         self.board = RealBoard()
         self.output = Output()
-        self.reset()
         Oven.__init__(self)
         self.start()
 

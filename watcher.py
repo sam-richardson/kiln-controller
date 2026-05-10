@@ -76,7 +76,7 @@ class Watcher(object):
 if __name__ == "__main__":
 
     watcher = Watcher(
-        kiln_url = "http://192.168.1.84:8081/api/stats",
+        kiln_url = "http://192.168.1.90:8081/api/stats",
         slack_hook_url = "you must add this",
         bad_check_limit = 6,
         temp_error_limit = 10,
