@@ -71,7 +71,7 @@ multiple_thermocouples = False
 # spi_cs_2 is only used when multiple_thermocouples is True.
 # Define it here when adding a second probe (uses the same SPI bus, second CS):
 # spi_cs_2 = board.D6
-multi_tc_delta_alert_degrees = 50  # alert threshold (in temp_scale units)
+multi_tc_delta_alert_degrees = 50  # alert threshold (degrees C)
 
 ########################################################################
 # If your kiln is above the starting temperature of the schedule when you
@@ -98,7 +98,7 @@ pid_kd = 220.83497910261562 # Derivative
 # Derivative spike limiter (#2)
 # Thermocouple noise can produce sudden large derivative-of-error spikes
 # that whip the relay. When True, the dErr value used by the PID is
-# clamped to +/- pid_d_spike_limit (in temp_scale per second) and a
+# clamped to +/- pid_d_spike_limit (degrees C per second) and a
 # small low-pass filter is applied. This prevents noise transients from
 # slamming the SSR while still allowing real heat-up rates through.
 pid_d_spike_limit_enabled = True
@@ -111,12 +111,12 @@ pid_d_filter_alpha = 0.4    # 0..1; higher = more responsive, less smoothing
 stop_integral_windup = True
 
 ########################################################################
-#   Simulation parameters
+#   Simulation parameters (all temperatures in degrees C)
 simulate = False
-sim_t_env      = 65
-sim_c_heat     = 500.0
-sim_c_oven     = 5000.0
-sim_p_heat     = 5450.0
+sim_t_env      = 18         # ambient room temperature (C)
+sim_c_heat     = 900.0      # heater heat capacity (J/C)
+sim_c_oven     = 9000.0     # oven heat capacity (J/C)
+sim_p_heat     = 5450.0     # heater power (W)
 sim_R_o_nocool = 0.5
 sim_R_o_cool   = 0.05
 sim_R_ho_noair = 0.1
@@ -127,7 +127,7 @@ sim_speedup_factor = 1
 #
 #   Time and Temperature parameters
 #
-temp_scale          = "c"  # c = Celsius | f = Fahrenheit
+# All temperatures throughout the controller are in degrees Celsius.
 time_scale_slope    = "h"  # s | m | h - units for displayed slope
 time_scale_profile  = "m"  # s | m | h - units for editing profiles
 
@@ -179,7 +179,7 @@ element_failure_detection = True
 # How long the PID must be above 95% duty before checking heat rate.
 element_failure_min_full_duty_seconds = 240
 # Minimum acceptable heat rate (degrees per hour) at full duty.
-# A typical electric pottery kiln climbs > 200 deg/hr in temp_scale.
+# A typical electric pottery kiln climbs > 200 deg C/hr.
 # Cone 6 cones expect to fire from ~1000C in roughly 2-3hr.
 element_failure_min_heat_rate = 80
 # Below this temperature the kiln may not climb fast (low elements
@@ -191,7 +191,7 @@ element_failure_min_temp = 200
 # After a profile completes the kiln keeps cooling. We track the
 # temperature and notify when it drops below cool_down_safe_open_temp.
 # Set to None to disable the safe-to-open notification.
-cool_down_safe_open_temp = 150       # degrees in temp_scale
+cool_down_safe_open_temp = 150       # degrees C
 cool_down_notify_on_complete = True  # send notification when run completes
 cool_down_notify_on_safe_open = True # send notification at safe_open temp
 
