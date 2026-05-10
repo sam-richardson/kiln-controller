@@ -189,9 +189,7 @@ class TempSensorReal(TempSensor):
 
     def get_temperature(self):
         try:
-            temp = self.raw_temp()  # subclass-provided
-            if config.temp_scale.lower() == "f":
-                temp = (temp * 9 / 5) + 32
+            temp = self.raw_temp()  # subclass-provided, always degrees C
             self.status.good()
             return temp
         except ThermocoupleError as tce:

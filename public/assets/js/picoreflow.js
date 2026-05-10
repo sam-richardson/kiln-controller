@@ -6,11 +6,9 @@ var profiles = [];
 var time_mode = 0;
 var selected_profile = 0;
 var selected_profile_name = 'cone-05-long-bisque.json';
-var temp_scale = "c";
 var time_scale_slope = "s";
 var time_scale_profile = "h";
 var time_scale_long = "Seconds";
-var temp_scale_display = "C";
 var kwh_rate = 0.26;
 var currency_type = "EUR";
 
@@ -109,7 +107,7 @@ function updateProfileTable()
     var color = "";
 
     var html = '<h3>Schedule Points</h3><div class="table-responsive" style="scroll: none"><table class="table table-striped">';
-        html += '<tr><th style="width: 50px">#</th><th>Target Time in ' + time_scale_long+ '</th><th>Target Temperature in °'+temp_scale_display+'</th><th>Slope in &deg;'+temp_scale_display+'/'+time_scale_slope+'</th><th></th></tr>';
+        html += '<tr><th style="width: 50px">#</th><th>Target Time in ' + time_scale_long+ '</th><th>Target Temperature in °C</th><th>Slope in &deg;C/'+time_scale_slope+'</th><th></th></tr>';
 
     for(var i=0; i<graph.profile.data.length;i++)
     {
@@ -179,13 +177,7 @@ function formatDPS(val) {
 }
 
 function hazardTemp(){
-
-    if (temp_scale == "f") {
-        return (1500 * 9 / 5) + 32
-    }
-    else {
-        return 1500
-    }
+    return 1500
 }
 
 function timeTickFormatter(val,axis)
@@ -601,18 +593,10 @@ $(document).ready(function()
         {
             console.log (e.data);
             x = JSON.parse(e.data);
-            temp_scale = x.temp_scale;
             time_scale_slope = x.time_scale_slope;
             time_scale_profile = x.time_scale_profile;
             kwh_rate = x.kwh_rate;
             currency_type = x.currency_type;
-
-            if (temp_scale == "c") {temp_scale_display = "C";} else {temp_scale_display = "F";}
-
-
-            $('#act_temp_scale').html('º'+temp_scale_display);
-            $('#target_temp_scale').html('º'+temp_scale_display);
-            $('#heat_rate_temp_scale').html('º'+temp_scale_display);
 
             switch(time_scale_profile){
                 case "s":
@@ -752,7 +736,7 @@ function renderSettings(cfg) {
         ],
         "Cost / display": [
             "kwh_rate", "kw_elements", "currency_type",
-            "temp_scale", "time_scale_slope", "time_scale_profile"
+            "time_scale_slope", "time_scale_profile"
         ],
         "Safety": [
             "emergency_shutoff_temp", "kiln_must_catch_up",

@@ -225,27 +225,27 @@ propagated.
 toolbar button → `#ortonImportModal` in the UI.
 
 Most kiln-firing recipes are written in *Orton* form:
-"ramp at 200 °/hr to 250 °, hold 30 min, ramp at 400 °/hr to
-1900 °, ramp at 108 °/hr to 2232 °, hold 10 min, fast cool to
-1500 °…". The importer accepts this in JSON form:
+"ramp at 110 °C/hr to 120 °C, hold 30 min, ramp at 220 °C/hr to
+1040 °C, ramp at 60 °C/hr to 1220 °C, hold 10 min, fast cool to
+815 °C…". The importer accepts this in JSON form:
 
 ```json
 {
   "name": "cone-6-glaze",
-  "start_temp": 70,
+  "start_temp": 20,
   "segments": [
-    {"type": "ramp", "rate": 200, "target": 250},
+    {"type": "ramp", "rate": 110, "target": 120},
     {"type": "hold", "minutes": 30},
-    {"type": "ramp", "rate": 400, "target": 1900},
-    {"type": "ramp", "rate": 108, "target": 2232},
+    {"type": "ramp", "rate": 220, "target": 1040},
+    {"type": "ramp", "rate": 60, "target": 1220},
     {"type": "hold", "minutes": 10},
-    {"type": "cool", "rate": 9999, "target": 1500},
-    {"type": "ramp", "rate": 100, "target": 1500}
+    {"type": "cool", "rate": 9999, "target": 815},
+    {"type": "ramp", "rate": 55, "target": 815}
   ]
 }
 ```
 
-`rate` is degrees per **hour** in your `temp_scale`. A rate ≥ 9000
+`rate` is degrees C per **hour**. A rate ≥ 9000
 is treated as "as fast as the kiln can manage" — a near-vertical
 segment in the waypoint output. Use that for cooling segments where
 you want unrestricted radiant cooling.
@@ -447,10 +447,10 @@ drivers, and the MAX31855/MAX31856 + bitbangio modules.
 2. Edit `config.py`:
    * `simulate = True` initially — you should run a full firing in
      simulation before connecting hardware.
-   * `temp_scale`, `kwh_rate`, `kw_elements`, `currency_type`
+   * `kwh_rate`, `kw_elements`, `currency_type`
    * thermocouple pins if you're using software SPI
    * `emergency_shutoff_temp` — set this **below** anything that
-     would melt elements/wiring; for cone 7 firings, 1300 °C / 2400 °F
+     would melt elements/wiring; for cone 7 firings, 1300 °C
      is a reasonable hard stop.
    * leave the new safety features at their defaults to start; tune
      after a successful test firing.

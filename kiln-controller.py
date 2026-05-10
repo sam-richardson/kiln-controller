@@ -186,7 +186,7 @@ EDITABLE_CONFIG_KEYS = {
     # economics
     "kwh_rate", "kw_elements", "currency_type",
     # display
-    "temp_scale", "time_scale_slope", "time_scale_profile",
+    "time_scale_slope", "time_scale_profile",
     # safety
     "emergency_shutoff_temp",
     "kiln_must_catch_up",
@@ -383,7 +383,6 @@ def get_config_for_ui():
     """Subset of config served to the read-only UI websocket."""
     return json.dumps(
         {
-            "temp_scale": config.temp_scale,
             "time_scale_slope": config.time_scale_slope,
             "time_scale_profile": config.time_scale_profile,
             "kwh_rate": config.kwh_rate,
