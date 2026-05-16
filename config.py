@@ -53,11 +53,10 @@ except (NotImplementedError, AttributeError, ImportError):
 #######################################
 #   max31855 - K type only
 #   max31856 - many thermocouple types
-max31855 = 1
-max31856 = 0
-# Uncomment if using MAX-31856:
-# import adafruit_max31856
-# thermocouple_type = adafruit_max31856.ThermocoupleType.K
+max31855 = 0
+max31856 = 1
+import adafruit_max31856
+thermocouple_type = adafruit_max31856.ThermocoupleType.K
 
 ########################################################################
 # Multiple thermocouple support (#4)
@@ -164,7 +163,7 @@ thermocouple_offset = 0
 temperature_average_samples = 10
 
 # AC frequency rejection for the MAX31856 (50Hz outside North America).
-ac_freq_50hz = False
+ac_freq_50hz = True
 
 ########################################################################
 # Heating-element failure detection (#1)
